@@ -294,6 +294,7 @@ const BARRIOS = [
 
 const REFRESH_MS   = 60000;
 const HOURS_WINDOW = 24;
+const FT_TO_M = 0.3048;
 
 /* Metadatos "curados" para columnas conocidas (icono/etiqueta/unidad/decimales/color).
    Cualquier columna que NO esté acá se interpreta automáticamente a partir de su
@@ -486,6 +487,39 @@ function selectBarrio(key){
   refresh(true);
 }
 
+/* ---------------- parser de "Detalle Nubosidad" (texto tipo METAR) ----------------
+   Formato esperado en la celda, ej:
+     "75% a 300 ft | 100% a 1500 ft"
+     "25% a 500 ft | 75% a 1200 ft | 100% a 3000 ft"
+     "0% — CAVOK (del METAR crudo)"
+   Se detecta por patrón de contenido (no por nombre de columna exacto),
+   así funciona sin importar cómo se llame el encabezado real de la celda. */
+function parseNubosidadDetalle(text){
+  if(text === null || text === undefined) return null;
+  const str = String(text).trim();
+  if(!str) return null;
+  if(/cavok/i.test(str)) return { cavok:true, layers:[] };
+  const parts = str.split("|").map(s => s.trim()).filter(Boolean);
+  const layers = [];
+  parts.forEach(p => {
+    const m = /(\d+(?:[.,]\d+)?)\s*%\s*a\s*(\d+(?:[.,]\d+)?)\s*ft/i.exec(p);
+    if(m){
+      const pct = parseFloat(m[1].replace(",", "."));
+      const ft  = parseFloat(m[2].replace(",", "."));
+      if(!Number.isNaN(pct) && !Number.isNaN(ft)){
+        layers.push({ pct, ft, m: ft * FT_TO_M });
+      }
+    }
+  });
+  layers.sort((a,b) => a.m - b.m);
+  return { cavok:false, layers };
+}
+
+function looksLikeNubosidadDetalle(val){
+  if(typeof val !== "string") return false;
+  return /cavok/i.test(val) || /\d+\s*%\s*a\s*\d+\s*ft/i.test(val);
+}
+
 /* ---------------- detección dinámica de columnas / metadatos ---------------- */
 function buildFieldMeta(cols, sampleRow){
   const meta = [];
@@ -498,6 +532,14 @@ function buildFieldMeta(cols, sampleRow){
     // Columna sin datos en el último registro (null/undefined/""): se omite
     // por completo, no se muestra como tarjeta vacía "--".
     if(val === null || val === undefined || val === "") return;
+
+    // Columna de "Detalle Nubosidad" (capas tipo METAR, texto libre con
+    // patrón "X% a Y ft" o "CAVOK"): se detecta por contenido, no por
+    // nombre exacto de encabezado, y se maneja con su propio gráfico.
+    if(looksLikeNubosidadDetalle(val)){
+      meta.push({ key, label:"Detalle Nubosidad", icon:"☁️", unit:"", dec:0, color:"#a3a3a3", nubosidad:true });
+      return;
+    }
 
     const isNumeric = typeof val === "number";
 
@@ -588,6 +630,79 @@ function makeChart(ctx, color){
   });
 }
 
+/* ---------------- gráfico especial "Detalle nubosidad" ----------------
+   Área bajo la curva altura(nubosidad%), con el primer tramo plano (desde
+   0% hasta el % de la primera capa, a su altura) y los tramos siguientes
+   interpolados linealmente entre capas consecutivas. El eje Y es dinámico:
+   su máximo se fija para que la altura de la capa más alta quede al 75%
+   de la altura total del gráfico. */
+function makeNubosidadChart(ctx){
+  return new Chart(ctx, {
+    type: "line",
+    data: {
+      datasets: [{
+        data: [],
+        borderColor: "#e5e7eb",
+        backgroundColor: "rgba(203,213,225,0.55)",
+        fill: "origin",
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0,
+        stepped: false
+      }]
+    },
+    options: {
+      responsive: true, animation: false,
+      parsing: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          type: "linear", min: 0, max: 100,
+          title: { display:true, text:"nubosidad (%)", color:"#8b95a7", font:{size:10} },
+          ticks: { color:"#8b95a7", font:{size:10}, stepSize:10 },
+          grid: { color:"#232b3d" }
+        },
+        y: {
+          type: "linear", min: 0, max: 1000,
+          title: { display:true, text:"Altura (m)", color:"#8b95a7", font:{size:10} },
+          ticks: { color:"#8b95a7", font:{size:10} },
+          grid: { color:"#232b3d" }
+        }
+      }
+    }
+  });
+}
+
+function updateNubosidadChart(chart, msgEl, parsed){
+  if(!parsed || parsed.cavok || !parsed.layers.length){
+    chart.data.datasets[0].data = [];
+    chart.options.scales.y.max = 1000;
+    chart.update();
+    if(msgEl){
+      msgEl.style.display = "block";
+      msgEl.textContent = (parsed && parsed.cavok) ? "☀️ CAVOK — cielo despejado" : "Sin datos de nubosidad";
+    }
+    if(chart.canvas) chart.canvas.style.display = "none";
+    return;
+  }
+  if(msgEl) msgEl.style.display = "none";
+  if(chart.canvas) chart.canvas.style.display = "";
+
+  const layers = parsed.layers;
+  const points = [];
+  points.push({ x: 0, y: layers[0].m });
+  points.push({ x: layers[0].pct, y: layers[0].m });
+  for(let i = 1; i < layers.length; i++){
+    points.push({ x: layers[i].pct, y: layers[i].m });
+  }
+  const maxH = layers[layers.length - 1].m;
+  const axisMax = maxH > 0 ? maxH / 0.75 : 1000;
+
+  chart.data.datasets[0].data = points;
+  chart.options.scales.y.max = axisMax;
+  chart.update();
+}
+
 function renderCardsAndCharts(meta, windowedRows, latestRow){
   cardsEl.innerHTML = "";
   chartsEl.innerHTML = "";
@@ -599,7 +714,9 @@ function renderCardsAndCharts(meta, windowedRows, latestRow){
     const div = document.createElement("div");
     div.className = "card";
     const valId = "v_" + cssId(f.key);
-    if(f.text){
+    if(f.nubosidad){
+      div.innerHTML = `<div class="label">${f.icon} ${f.label}</div><div class="value" id="${valId}" style="font-size:0.95rem;">--</div>`;
+    } else if(f.text){
       div.innerHTML = `<div class="label">${f.icon} ${f.label}</div><div class="value" id="${valId}" style="font-size:1.1rem;">--</div>`;
     } else {
       div.innerHTML = `<div class="label">${f.icon} ${f.label}</div><div class="value" id="${valId}">--<span class="unit">${f.unit}</span></div>`;
@@ -607,7 +724,7 @@ function renderCardsAndCharts(meta, windowedRows, latestRow){
     cardsEl.appendChild(div);
   });
 
-  active.filter(f => !f.text).forEach(f => {
+  active.filter(f => !f.text && !f.nubosidad).forEach(f => {
     const box = document.createElement("div");
     box.className = "chart-box";
     const canvasId = "chart_" + cssId(f.key);
@@ -616,12 +733,30 @@ function renderCardsAndCharts(meta, windowedRows, latestRow){
     charts[f.key] = makeChart(document.getElementById(canvasId), f.color);
   });
 
+  active.filter(f => f.nubosidad).forEach(f => {
+    const box = document.createElement("div");
+    box.className = "chart-box";
+    const canvasId = "chart_" + cssId(f.key);
+    const msgId = "msg_" + cssId(f.key);
+    box.innerHTML = `<h3>${f.icon} Detalle nubosidad</h3>
+      <div id="${msgId}" style="display:none;color:#8b95a7;font-size:0.85rem;padding:40px 0;text-align:center;"></div>
+      <canvas id="${canvasId}"></canvas>`;
+    chartsEl.appendChild(box);
+    charts[f.key] = makeNubosidadChart(document.getElementById(canvasId));
+    charts[f.key]._msgEl = document.getElementById(msgId);
+  });
+
   if(latestRow){
     active.forEach(f => {
       const el = document.getElementById("v_" + cssId(f.key));
       if(!el) return;
       const val = latestRow[f.key];
-      if(f.text){
+      if(f.nubosidad){
+        const parsed = parseNubosidadDetalle(val);
+        if(!parsed) el.textContent = "--";
+        else if(parsed.cavok) el.textContent = "CAVOK";
+        else el.textContent = parsed.layers.length + " capa(s)";
+      } else if(f.text){
         el.textContent = (val === null || val === undefined || val === "") ? "--" : val;
       } else if(typeof val === "number"){
         el.innerHTML = val.toFixed(f.dec) + `<span class="unit">${f.unit}</span>`;
@@ -631,12 +766,20 @@ function renderCardsAndCharts(meta, windowedRows, latestRow){
     });
   }
 
-  active.filter(f => !f.text).forEach(f => {
+  active.filter(f => !f.text && !f.nubosidad).forEach(f => {
     const chart = charts[f.key];
     if(!chart) return;
     chart.data.labels = windowedRows.map(r => formatAxisLabel(r["Fecha/Hora"]));
     chart.data.datasets[0].data = windowedRows.map(r => r[f.key]);
     chart.update();
+  });
+
+  active.filter(f => f.nubosidad).forEach(f => {
+    const chart = charts[f.key];
+    if(!chart) return;
+    const val = latestRow ? latestRow[f.key] : null;
+    const parsed = parseNubosidadDetalle(val);
+    updateNubosidadChart(chart, chart._msgEl, parsed);
   });
 }
 
@@ -732,7 +875,7 @@ function renderStats(meta, windowedRows){
   statsGridEl.innerHTML = "";
   statCharts = {};
 
-  const active = meta.filter(f => checkedKeys.has(f.key) && !f.text);
+  const active = meta.filter(f => checkedKeys.has(f.key) && !f.text && !f.nubosidad);
 
   if(!active.length){
     statsGridEl.innerHTML = `<span id="statsEmpty">No hay variables numéricas seleccionadas para mostrar estadísticas.</span>`;
