@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monitor climático de Tucumán</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0b0f19;
+    --panel:#121826;
+    --panel-border:#232b3d;
+    --text:#e6e9ef;
+    --text-dim:#8b95a7;
+    --accent:#22c55e;
+    --red:#f0555a;
+    --blue:#4ea1f7;
+    --font: 'Consolas','Menlo','Monaco',monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);}
+  body{display:flex;align-items:stretch;min-height:100vh;}
+
+  /* ---------- SIDEBAR ---------- */
+  #sidebar{
+    width:250px;
+    flex:0 0 250px;
+    background:var(--panel);
+    border-right:1px solid var(--panel-border);
+    padding:20px 16px 40px;
+    position:sticky;
+    top:0;
+    height:100vh;
+    overflow-y:auto;
+  }
+  #sidebar h2{
+    font-size:0.95rem;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin:0 0 26px;
+    color:var(--text);
+  }
+  .side-label{
+    font-size:0.8rem;
+    color:var(--text-dim);
+    text-transform:uppercase;
+    letter-spacing:0.04em;
+    margin:0 0 8px;
+    text-align:center;
+  }
+  .side-block{margin-bottom:22px;}
+  select#barrioSelect{
+    width:100%;
+    background:#0d1220;
+    color:var(--text);
+    border:1px solid var(--panel-border);
+    border-radius:6px;
+    padding:8px 10px;
+    font-family:var(--font);
+    font-size:0.85rem;
+  }
+  .mode-toggle{
+    display:flex;
+    gap:8px;
+  }
+  .mode-btn{
+    flex:1;
+    background:transparent;
+    border:1px solid var(--panel-border);
+    color:var(--text);
+    padding:8px 4px;
+    border-radius:8px;
+    font-family:var(--font);
+    font-size:0.82rem;
+    cursor:pointer;
+  }
+  .mode-btn.active{border-color:var(--red);color:var(--red);}
+  .date-block{margin-top:14px;}
+  .date-block > label{
+    display:block;
+    font-size:0.72rem;
+    color:var(--text-dim);
+    margin-bottom:4px;
+  }
+  .mini-cal{
+    background:#0d1220;
+    border:1px solid var(--panel-border);
+    border-radius:8px;
+    padding:8px;
+    margin-bottom:12px;
+  }
+  .mini-cal .cal-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom:6px;
+  }
+  .mini-cal .cal-nav{
+    background:none;
+    border:none;
+    color:var(--text-dim);
+    cursor:pointer;
+    font-size:0.9rem;
+    padding:2px 8px;
+    border-radius:4px;
+  }
+  .mini-cal .cal-nav:hover{background:#1a2234;color:var(--text);}
+  .mini-cal .cal-title{font-size:0.78rem;color:var(--text);font-weight:600;}
+  .mini-cal .cal-grid{
+    display:grid;
+    grid-template-columns:repeat(7,1fr);
+    gap:2px;
+  }
+  .mini-cal .cal-dow{
+    font-size:0.62rem;
+    color:var(--text-dim);
+    text-align:center;
+    padding:3px 0;
+  }
+  .mini-cal .cal-day{
+    font-size:0.72rem;
+    text-align:center;
+    padding:5px 0;
+    border-radius:5px;
+    cursor:pointer;
+    color:var(--text);
+  }
+  .mini-cal .cal-day:hover{background:#1a2234;}
+  .mini-cal .cal-day.muted{color:#3d465c;}
+  .mini-cal .cal-day.selected{background:var(--accent);color:#04240f;font-weight:700;}
+  .mini-cal .cal-day.today{outline:1px solid var(--blue);}
+  #applyRange{
+    width:100%;
+    background:var(--accent);
+    color:#04240f;
+    border:none;
+    border-radius:6px;
+    padding:8px;
+    font-family:var(--font);
+    font-weight:600;
+    font-size:0.8rem;
+    cursor:pointer;
+  }
+  hr.side-sep{border:none;border-top:1px solid var(--panel-border);margin:20px 0;}
+  #varsList label{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:0.8rem;
+    padding:4px 2px;
+    cursor:pointer;
+    color:var(--text);
+  }
+  #varsList input{accent-color:var(--accent);}
+  #barrioStatus, #varsHint{font-size:0.7rem;color:var(--text-dim);}
+
+  /* ---------- MAIN ---------- */
+  #main{flex:1 1 auto;min-width:0;padding:24px 28px 60px;}
+  header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:4px;}
+  header h1{font-size:1.4rem;margin:0;display:flex;align-items:center;gap:8px;}
+  header h1 .dot{color:var(--accent);}
+  .loc{color:var(--text-dim);font-size:0.95rem;display:flex;align-items:center;gap:6px;}
+  .subtitle{color:var(--text-dim);font-size:0.85rem;margin:2px 0 22px;}
+  #status{font-size:0.78rem;color:var(--text-dim);margin-bottom:18px;}
+  #status.err{color:var(--red);}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(160px,1fr));gap:12px;margin-bottom:26px;}
+  .card{background:var(--panel);border:1px solid var(--panel-border);border-radius:10px;padding:14px 16px;}
+  .card .label{font-size:0.72rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.03em;display:flex;align-items:center;gap:6px;margin-bottom:10px;}
+  .card .value{font-size:1.5rem;font-weight:600;}
+  .card .unit{font-size:0.85rem;font-weight:400;color:var(--text-dim);margin-left:2px;}
+  .charts{display:grid;grid-template-columns:repeat(auto-fit, minmax(360px,1fr));gap:20px;}
+  .chart-box{background:var(--panel);border:1px solid var(--panel-border);border-radius:10px;padding:14px 16px 6px;}
+  .chart-box h3{margin:0 0 8px;font-size:0.85rem;color:var(--text-dim);font-weight:500;}
+  canvas{max-height:220px;}
+
+  /* ---------- TOP-LEVEL VIEW TABS ---------- */
+  .view-tabs{display:flex;gap:8px;margin-bottom:18px;}
+  .view-tab-btn{
+    background:transparent;
+    border:1px solid var(--panel-border);
+    color:var(--text-dim);
+    padding:8px 16px;
+    border-radius:8px;
+    font-family:var(--font);
+    font-size:0.85rem;
+    cursor:pointer;
+  }
+  .view-tab-btn.active{border-color:var(--accent);color:var(--accent);}
+
+  /* ---------- STATS VIEW ---------- */
+  .stats-grid{display:grid;grid-template-columns:repeat(auto-fit, minmax(420px,1fr));gap:18px;}
+  .stat-card{
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:12px;
+    padding:18px 20px;
+    display:flex;
+    gap:18px;
+    align-items:center;
+    flex-wrap:wrap;
+  }
+  .stat-card .stat-left{flex:1 1 220px;min-width:200px;}
+  .stat-card .stat-title{font-size:1rem;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+  .stat-card .stat-row{font-weight:700;color:#facc15;font-size:0.95rem;margin:3px 0;}
+  .stat-card .stat-row .stat-name{color:#facc15;}
+  .stat-card .stat-row.trend-up{color:#f0555a;}
+  .stat-card .stat-row.trend-down{color:#4ea1f7;}
+  .stat-card .stat-row.trend-flat{color:#8b95a7;}
+  .stat-card .stat-row.trend-up .stat-name, .stat-card .stat-row.trend-up .trend-val{color:#f0555a;}
+  .stat-card .stat-row.trend-down .stat-name, .stat-card .stat-row.trend-down .trend-val{color:#4ea1f7;}
+  .stat-card .stat-row.trend-flat .stat-name, .stat-card .stat-row.trend-flat .trend-val{color:#8b95a7;}
+  .stat-card .stat-right{flex:1 1 220px;min-width:220px;max-width:320px;}
+  .stat-card canvas{max-height:180px;}
+  #statsEmpty{color:var(--text-dim);font-size:0.85rem;}
+
+  @media (max-width:840px){
+    body{flex-direction:column;}
+    #sidebar{width:100%;flex:none;height:auto;position:relative;border-right:none;border-bottom:1px solid var(--panel-border);}
+  }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h2>⚙️ Configuración</h2>
+
+  <div class="side-block">
+    <div class="side-label">Estación</div>
+    <select id="barrioSelect"><option>Cargando…</option></select>
+    <div id="barrioStatus" style="margin-top:6px;"></div>
+  </div>
+
+  <div class="side-block">
+    <div class="mode-toggle">
+      <button class="mode-btn active" id="btnActual">Actual</button>
+      <button class="mode-btn" id="btnHistorico">Histórico</button>
+    </div>
+    <div class="date-block" id="dateBlock" style="display:none;">
+      <label>Fecha inicio</label>
+      <div class="mini-cal" id="calStart"></div>
+      <label>Fecha fin</label>
+      <div class="mini-cal" id="calEnd"></div>
+      <button id="applyRange">Aplicar rango</button>
+    </div>
+  </div>
+
+  <hr class="side-sep">
+
+  <div class="side-block">
+    <div class="side-label" style="text-align:left;">Variables a mostrar</div>
+    <div id="varsList"><span id="varsHint">Elegí una estación para ver sus variables.</span></div>
+  </div>
+</div>
+
+<div id="main">
+  <header>
+    <h1><span class="dot">●</span> Monitor climático de Tucumán · <span id="modeTitle">Tiempo Real</span></h1>
+    <span class="loc">📍 <span id="barrioNameLabel">ISANMI97</span></span>
+  </header>
+  <div class="subtitle" id="subtitleText">Últimas 24 horas · actualización automática cada 60s</div>
+  <div id="status">Cargando datos…</div>
+
+  <div class="view-tabs">
+    <button class="view-tab-btn active" id="btnViewMonitor">📊 Monitoreo</button>
+    <button class="view-tab-btn" id="btnViewStats">📈 Estadísticas</button>
+  </div>
+
+  <div id="monitorView">
+    <div class="grid" id="cards"></div>
+    <div class="charts" id="charts"></div>
+  </div>
+
+  <div id="statsView" style="display:none;">
+    <div class="stats-grid" id="statsGrid"></div>
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   FUENTES DE DATOS
+   El dashboard ahora recibe datos EXCLUSIVAMENTE de estas dos estaciones
+   Wunderground (cada una con su propia planilla de Google Sheets, pestaña
+   "Datos", según los scripts .gs de Apps Script):
+
+     - ISANMI97  (spreadsheet propio)
+     - ISANMI169 (spreadsheet propio)
+
+   Para agregar/quitar una estación: editá el array BARRIOS de abajo. Cada
+   entrada necesita su sheetId (el ID largo entre /d/ y /edit en la URL de
+   Google Sheets) y el nombre de su pestaña de datos.
+   ========================================================================= */
+const BARRIOS = [
+  { key: "ISANMI97",  nombre: "ISANMI97",  sheetId: "1XJjzwDmjYSmgQpI1knXH1div7GK_Ycue2k58moSBxXw", sheetName: "Datos" },
+  { key: "ISANMI169", nombre: "ISANMI169", sheetId: "1ICpVBBmb0Z9JvxKHohDJJ_RYMExLR6JSFhTTJovB95g", sheetName: "Datos" },
+];
+
+const REFRESH_MS   = 60000;
+const HOURS_WINDOW = 24;
+
+/* Metadatos "curados" para columnas conocidas (icono/etiqueta/unidad/decimales/color).
+   Cualquier columna que NO esté acá se interpreta automáticamente a partir de su
+   encabezado ("Campo (Unidad)"), así estaciones con sensores distintos igual
+   se grafican correctamente.
+
+   IMPORTANTE (fix de íconos faltantes): la búsqueda contra este diccionario
+   ahora se hace de forma normalizada (sin importar mayúsculas/minúsculas,
+   espacios extra ni paréntesis) para que encabezados como "FULL Raw",
+   "FULL RAW" o "full (raw)" igual encuentren la entrada "FULL (Raw)" de
+   abajo. Antes la comparación era exacta y por eso algunas tarjetas
+   (FULL RAW, IR RAW, ALS RAW) mostraban un ícono genérico "▪️" en vez del
+   ícono definido. */
+const OVERRIDES = {
+  "Temperatura (°C)":            { label:"Temperatura",        icon:"🌡️", color:"#f0555a" },
+  "Presión (hPa)":                { label:"Presión",             icon:"⬤", color:"#00FF00" },
+  "Humedad (%)":                  { label:"Humedad",             icon:"💧", color:"#2563eb" },
+  "Densidad (kg/m³)":             { label:"Densidad",            icon:"≋", color:"#c4b5fd" },
+  "Humedad Abs (g/m³)":           { label:"Humedad Abs",         icon:"💨", color:"#2563eb" },
+  "Sensación Térmica (°C)":       { label:"Sensación Térmica",   icon:"🔥", color:"#fb923c" },
+  "Bulbo Húmedo (°C)":            { label:"Bulbo Húmedo",        icon:"●", color:"#e879f9" },
+  "Punto Rocío (°C)":             { label:"Punto Rocío",         icon:"☁️", color:"#f472b6" },
+  "Presión NM (hPa)":             { label:"Presión NM",          icon:"⛰️", color:"#166534" },
+  "Altitud (m)":                  { label:"Altitud",             icon:"📐", color:"#a3a3a3" },
+  "IAQ":                          { label:"IAQ",                 icon:"🫧", color:"#34d399" },
+  "IAQ Precisión (0-3)":          { label:"IAQ Precisión",       icon:"🎯", color:"#a3a3a3" },
+  "eCO2 (ppm)":                   { label:"eCO2",                icon:"🫁", color:"#f97316" },
+  "VOC eq (ppm)":                 { label:"VOC eq",              icon:"🧪", color:"#c084fc" },
+  "PM1.0 Std (µg/m³)":            { label:"PM1.0 Std",           icon:"🌫️", color:"#94a3b8" },
+  "PM2.5 Std (µg/m³)":            { label:"PM2.5 Std",           icon:"🌫️", color:"#64748b" },
+  "PM10 Std (µg/m³)":             { label:"PM10 Std",            icon:"🌫️", color:"#475569" },
+  "PM1.0 Atm (µg/m³)":            { label:"PM1.0 Atm",           icon:"🌁", color:"#38bdf8" },
+  "PM2.5 Atm (µg/m³)":            { label:"PM2.5 Atm",           icon:"🌁", color:"#0ea5e9" },
+  "PM10 Atm (µg/m³)":             { label:"PM10 Atm",            icon:"🌁", color:"#0284c7" },
+  "FULL (Raw)":                   { label:"FULL (Raw)",          icon:"☀️", color:"#fde047", unit:"counts" },
+  "IR (Raw)":                     { label:"IR (Raw)",            icon:"🔴", color:"#ff0000", unit:"counts" },
+  "UV (Raw)":                     { label:"UV (Raw)",            icon:"🟣", color:"#8b5cf6", unit:"counts" },
+  "ALS (Raw)":                    { label:"ALS (Raw)",           icon:"💡", color:"#ffffff", unit:"counts" },
+  "Radiación TOA (W/m²)":         { label:"Radiación TOA",       icon:"🔆", color:"#fbbf24" },
+  "Índice Acústico (I)":          { label:"Índice Acústico",     icon:"🔉", color:"#86efac" },
+  "Nivel de Ruido (dBA)":         { label:"Nivel de Ruido",      icon:"🔊", color:"#86efac" },
+  "Precipitación (mm)":           { label:"Precipitación",       icon:"🌧️", color:"#38bdf8" },
+  "Precipitación Acumulada (mm)": { label:"Precipitación Acum.", icon:"🌧️", color:"#38bdf8" },
+  "Lluvia (mm)":                  { label:"Lluvia",              icon:"🌧️", color:"#38bdf8" },
+  "Tasa de Lluvia (mm/h)":        { label:"Tasa de Lluvia",      icon:"🌧️", color:"#38bdf8" },
+  "Vel. Viento (km/h)":           { label:"Vel. Viento",         icon:"🍃", color:"#4ea1f7" },
+  "Dir. Viento (°)":              { label:"Dir. Viento",         icon:"🧭", color:"#a3a3a3" },
+  "Ráfagas (km/h)":               { label:"Ráfagas",             icon:"💨", color:"#38bdf8" },
+  "Precip. hora (mm)":            { label:"Precip. hora",        icon:"🌧️", color:"#38bdf8" },
+  "Precip. acum. día (mm)":       { label:"Precip. acum. día",   icon:"🌧️", color:"#38bdf8" },
+  "Radiación Solar (W/m²)":       { label:"Radiación Solar",     icon:"☀️", color:"#fbbf24" },
+  "UV":                           { label:"UV",                  icon:"☀️", color:"#8b5cf6" },
+};
+
+/* Normaliza un encabezado para poder compararlo sin importar mayúsculas,
+   espacios repetidos o presencia/ausencia de paréntesis. */
+function normKey(k){
+  return String(k)
+    .toLowerCase()
+    .replace(/[()]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/* Índice de OVERRIDES ya normalizado, armado una sola vez al cargar. */
+const OVERRIDES_NORM = {};
+Object.keys(OVERRIDES).forEach(k => { OVERRIDES_NORM[normKey(k)] = OVERRIDES[k]; });
+
+/* Busca en OVERRIDES primero por clave exacta y, si no encuentra,
+   por clave normalizada. */
+function lookupOverride(key){
+  return OVERRIDES[key] || OVERRIDES_NORM[normKey(key)] || null;
+}
+
+/* Regla de respaldo: cualquier columna de lluvia/precipitación que no esté
+   listada arriba con su nombre exacto también se pinta celeste. */
+const AUTO_COLOR_RULES = [
+  [/lluvia|precipita/i, "#38bdf8"],
+];
+
+const AUTO_ICON_RULES = [
+  [/temperat/i, "🌡️"], [/presi[oó]n/i, "⬤"], [/humedad abs/i, "💨"], [/humedad/i, "💧"],
+  [/densidad/i, "≋"], [/sensaci[oó]n/i, "🔥"], [/bulbo/i, "●"], [/roc[ií]o/i, "☁️"],
+  [/altitud/i, "📐"], [/lux|iluminan/i, "💡"], [/uv/i, "☀️"], [/ruido|ac[uú]stic/i, "🔊"],
+  [/toa/i, "☀️"], [/viento/i, "🍃"], [/lluvia|precipita/i, "🌧️"],
+  [/iaq/i, "🫧"], [/co2/i, "🫁"], [/voc/i, "🧪"], [/pm\d/i, "🌫️"],
+  /* Reglas agregadas para que los sensores ópticos en crudo (FULL/IR/ALS)
+     nunca queden con el ícono genérico, incluso si algún día aparecen con
+     un encabezado levemente distinto y tampoco calzan con OVERRIDES. */
+  [/^full\b/i, "☀️"], [/^ir\b/i, "🔴"], [/^als\b/i, "💡"],
+];
+const AUTO_COLOR_PALETTE = ["#4ea1f7","#22c55e","#f0555a","#c084fc","#fb923c","#38bdf8","#fde047","#e879f9","#2dd4bf","#a3a3a3","#facc15","#818cf8"];
+
+let barrios = [];              // [{key, nombre, sheetId, sheetName}]
+let currentBarrio = null;
+let currentFieldMeta = [];     // metadatos de columnas de la estación actual
+let checkedKeys = new Set();
+let charts = {};
+let statCharts = {};
+let autoRefreshTimer = null;
+let rangeStart = null, rangeEnd = null;
+let currentView = "monitor"; // "monitor" | "stats"
+
+const cardsEl   = document.getElementById("cards");
+const chartsEl  = document.getElementById("charts");
+const statusEl  = document.getElementById("status");
+const varsListEl= document.getElementById("varsList");
+const barrioSelectEl = document.getElementById("barrioSelect");
+const barrioStatusEl = document.getElementById("barrioStatus");
+const statsGridEl = document.getElementById("statsGrid");
+const monitorViewEl = document.getElementById("monitorView");
+const statsViewEl = document.getElementById("statsView");
+
+function cssId(k){ return k.replace(/[^a-zA-Z0-9]/g,"_"); }
+
+/* ---------------- lectura de Google Sheets (gviz jsonp) ---------------- */
+function parseGvizDate(v){
+  const m = /Date\((\d+),(\d+),(\d+),(\d+),(\d+),(\d+)/.exec(v);
+  if(!m) return null;
+  return new Date(+m[1], +m[2], +m[3], +m[4], +m[5], +m[6]);
+}
+
+function fetchSheet(sheetId, sheetName){
+  return new Promise((resolve, reject) => {
+    const cbName = "gvizCb_" + Date.now() + "_" + Math.floor(Math.random()*1e6);
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error("Timeout leyendo el Sheet (¿está compartido públicamente?)"));
+    }, 15000);
+
+    function cleanup(){
+      clearTimeout(timeout);
+      delete window[cbName];
+      if(script.parentNode) script.parentNode.removeChild(script);
+    }
+
+    window[cbName] = function(json){
+      cleanup();
+      try{
+        const cols = json.table.cols.map(c => c.label);
+        const rows = json.table.rows.map(r => {
+          const obj = {};
+          r.c.forEach((cell, i) => {
+            if(!cell){ obj[cols[i]] = null; return; }
+            obj[cols[i]] = (cols[i] === "Fecha/Hora") ? parseGvizDate(cell.v) : cell.v;
+          });
+          return obj;
+        });
+        resolve({ cols, rows });
+      } catch(e){ reject(e); }
+    };
+
+    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json;responseHandler:${cbName}&sheet=${encodeURIComponent(sheetName)}&_=${Date.now()}`;
+    const script = document.createElement("script");
+    script.src = url;
+    script.onerror = () => { cleanup(); reject(new Error("No se pudo cargar el Sheet (verificá que esté compartido como 'Cualquiera con el enlace')")); };
+    document.body.appendChild(script);
+  });
+}
+
+/* ---------------- construcción dinámica del menú de estaciones ---------------- */
+async function loadBarrios(){
+  // Cada estación es una planilla (spreadsheet) propia, definida en
+  // BARRIOS más arriba. El dashboard SOLO lee de las estaciones listadas
+  // ahí (actualmente: ISANMI97 e ISANMI169).
+  barrios = BARRIOS;
+
+  if(!barrios.length){
+    barrioStatusEl.textContent = "⚠ No hay estaciones configuradas en BARRIOS.";
+    return;
+  }
+  barrioStatusEl.textContent = "";
+
+  barrioSelectEl.innerHTML = "";
+  barrios.forEach(b => {
+    const opt = document.createElement("option");
+    opt.value = b.key;
+    opt.textContent = b.nombre;
+    barrioSelectEl.appendChild(opt);
+  });
+  barrioSelectEl.value = barrios[0].key;
+  selectBarrio(barrios[0].key);
+}
+
+function selectBarrio(key){
+  currentBarrio = barrios.find(b => b.key === key) || barrios[0];
+  document.getElementById("barrioNameLabel").textContent = currentBarrio.nombre;
+  checkedKeys = new Set(); // se repuebla al detectar columnas de la nueva estación
+  currentFieldMeta = [];
+  refresh(true);
+}
+
+/* ---------------- detección dinámica de columnas / metadatos ---------------- */
+function buildFieldMeta(cols, sampleRow){
+  const meta = [];
+  let colorIdx = 0;
+  cols.forEach(key => {
+    if(key === "Fecha/Hora") return;
+    const ov = lookupOverride(key);
+    const val = sampleRow ? sampleRow[key] : null;
+
+    // Columna sin datos en el último registro (null/undefined/""): se omite
+    // por completo, no se muestra como tarjeta vacía "--".
+    if(val === null || val === undefined || val === "") return;
+
+    const isNumeric = typeof val === "number";
+
+    if(ov && ov.text){
+      meta.push({ key, label: ov.label, icon: ov.icon, unit:"", dec:0, color:"#a3a3a3", text:true });
+      return;
+    }
+    if(!isNumeric && typeof val !== "number"){
+      // columna categórica/texto (o sin datos aún): mostrar como tarjeta de texto
+      const m = /^(.*)\s\(([^)]+)\)$/.exec(key);
+      meta.push({ key, label: ov ? ov.label : (m ? m[1] : key), icon: ov ? ov.icon : "🏷️", unit:"", dec:0, color:"#a3a3a3", text:true });
+      return;
+    }
+    let label = key, unit = "";
+    const m = /^(.*)\s\(([^)]+)\)$/.exec(key);
+    if(m){ label = m[1]; unit = m[2]; }
+    if(ov){
+      label = ov.label;
+      // Si el override trae una unidad explícita (ej. "counts" para los
+      // sensores ópticos en crudo TSL2591/LTR390), prevalece sobre la que
+      // venga en el encabezado del Sheet (que hoy trae "TSL"/"LTR", el
+      // nombre del chip, no una unidad real).
+      if(ov.unit !== undefined) unit = ov.unit;
+    }
+    const icon = ov ? ov.icon : (AUTO_ICON_RULES.find(([re]) => re.test(label))?.[1] || "▪️");
+    const ruleColor = AUTO_COLOR_RULES.find(([re]) => re.test(label))?.[1];
+    const color = ov ? ov.color : (ruleColor || AUTO_COLOR_PALETTE[colorIdx++ % AUTO_COLOR_PALETTE.length]);
+    const dec = Number.isInteger(val) ? 0 : 1;
+    meta.push({ key, label, icon, unit, dec, color, text:false });
+  });
+  return meta;
+}
+
+/* ---------------- render de checkboxes de variables ---------------- */
+function renderVarsList(meta){
+  varsListEl.innerHTML = "";
+  if(!meta.length){
+    varsListEl.innerHTML = `<span id="varsHint">No se encontraron columnas para esta estación.</span>`;
+    return;
+  }
+  // Primera carga para esta estación: tildar TODAS las variables por defecto.
+  if(checkedKeys.size === 0){
+    meta.forEach(f => checkedKeys.add(f.key));
+  }
+  meta.forEach(f => {
+    const id = "chk_" + cssId(f.key);
+    const wrap = document.createElement("label");
+    wrap.innerHTML = `<input type="checkbox" id="${id}" ${checkedKeys.has(f.key) ? "checked" : ""}> ${f.icon} ${f.label}`;
+    wrap.querySelector("input").addEventListener("change", (e) => {
+      if(e.target.checked) checkedKeys.add(f.key); else checkedKeys.delete(f.key);
+      renderCurrentView();
+    });
+    varsListEl.appendChild(wrap);
+  });
+}
+
+/* ---------------- render de tarjetas + gráficos ---------------- */
+let lastWindowedRows = [];
+let lastLatestRow = null;
+
+/* Formatea la marca de tiempo del eje X. En modo "actual" (ventana de 24 hs)
+   mostramos solo hora:minuto en formato 24 hs (sin AM/PM), porque no tiene
+   sentido repetir la fecha si todos los puntos son del mismo día/ventana
+   corta. En modo "histórico" (rango de días elegido por el usuario) sí
+   mostramos día y mes además de la hora, porque el rango puede abarcar
+   varios días.
+*/
+function formatAxisLabel(date){
+  if(!date) return "";
+  if(mode === "historico"){
+    return date.toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false});
+  }
+  return date.toLocaleString("es-AR",{hour:"2-digit",minute:"2-digit",hour12:false});
+}
+
+function makeChart(ctx, color){
+  return new Chart(ctx, {
+    type: "line",
+    data: { labels: [], datasets: [{ data: [], borderColor: color, backgroundColor: color + "33", fill: true, tension: 0.25, pointRadius: 0, borderWidth: 2 }] },
+    options: {
+      responsive: true, animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: "#8b95a7", maxTicksLimit: 8, font:{size:10} }, grid:{color:"#232b3d"} },
+        y: { ticks: { color: "#8b95a7", font:{size:10} }, grid:{color:"#232b3d"} }
+      }
+    }
+  });
+}
+
+function renderCardsAndCharts(meta, windowedRows, latestRow){
+  cardsEl.innerHTML = "";
+  chartsEl.innerHTML = "";
+  charts = {};
+
+  const active = meta.filter(f => checkedKeys.has(f.key));
+
+  active.forEach(f => {
+    const div = document.createElement("div");
+    div.className = "card";
+    const valId = "v_" + cssId(f.key);
+    if(f.text){
+      div.innerHTML = `<div class="label">${f.icon} ${f.label}</div><div class="value" id="${valId}" style="font-size:1.1rem;">--</div>`;
+    } else {
+      div.innerHTML = `<div class="label">${f.icon} ${f.label}</div><div class="value" id="${valId}">--<span class="unit">${f.unit}</span></div>`;
+    }
+    cardsEl.appendChild(div);
+  });
+
+  active.filter(f => !f.text).forEach(f => {
+    const box = document.createElement("div");
+    box.className = "chart-box";
+    const canvasId = "chart_" + cssId(f.key);
+    box.innerHTML = `<h3>${f.icon} ${f.label} (${f.unit})</h3><canvas id="${canvasId}"></canvas>`;
+    chartsEl.appendChild(box);
+    charts[f.key] = makeChart(document.getElementById(canvasId), f.color);
+  });
+
+  if(latestRow){
+    active.forEach(f => {
+      const el = document.getElementById("v_" + cssId(f.key));
+      if(!el) return;
+      const val = latestRow[f.key];
+      if(f.text){
+        el.textContent = (val === null || val === undefined || val === "") ? "--" : val;
+      } else if(typeof val === "number"){
+        el.innerHTML = val.toFixed(f.dec) + `<span class="unit">${f.unit}</span>`;
+      } else {
+        el.innerHTML = "--" + `<span class="unit">${f.unit}</span>`;
+      }
+    });
+  }
+
+  active.filter(f => !f.text).forEach(f => {
+    const chart = charts[f.key];
+    if(!chart) return;
+    chart.data.labels = windowedRows.map(r => formatAxisLabel(r["Fecha/Hora"]));
+    chart.data.datasets[0].data = windowedRows.map(r => r[f.key]);
+    chart.update();
+  });
+}
+
+/* ---------------- pestaña de ESTADÍSTICAS ---------------- */
+function linearRegression(values){
+  // values: array de números (o null) en orden temporal. Devuelve array del
+  // mismo largo con la recta de tendencia (y = a + b*x) ajustada por mínimos
+  // cuadrados sobre los puntos válidos (ignora nulls).
+  const pts = [];
+  values.forEach((v, i) => { if(typeof v === "number" && !Number.isNaN(v)) pts.push([i, v]); });
+  if(pts.length < 2) return values.map(() => null);
+  const n = pts.length;
+  let sumX=0, sumY=0, sumXY=0, sumXX=0;
+  pts.forEach(([x,y]) => { sumX+=x; sumY+=y; sumXY+=x*y; sumXX+=x*x; });
+  const denom = (n*sumXX - sumX*sumX);
+  if(denom === 0) return values.map(() => null);
+  const b = (n*sumXY - sumX*sumY) / denom;
+  const a = (sumY - b*sumX) / n;
+  return values.map((v,i) => a + b*i);
+}
+
+function computeStats(values){
+  const nums = values.filter(v => typeof v === "number" && !Number.isNaN(v));
+  if(!nums.length) return null;
+  const avg = nums.reduce((s,v) => s+v, 0) / nums.length;
+  const max = Math.max(...nums);
+  const min = Math.min(...nums);
+  const variacion = nums[nums.length - 1] - nums[0]; // último - primero (puede ser +, 0 o -)
+  return { avg, max, min, variacion };
+}
+
+/* Pendiente de la recta de regresión (mínimos cuadrados) en unidades/hora,
+   usando el tiempo real (Fecha/Hora) de cada punto como variable X, así el
+   resultado queda en unidades físicas por hora (°C/h, hPa/h, %/h, etc.). */
+function computeTrendPerHour(windowedRows, key){
+  const pts = [];
+  windowedRows.forEach(r => {
+    const t = r["Fecha/Hora"];
+    const v = r[key];
+    if(t && typeof v === "number" && !Number.isNaN(v)){
+      pts.push([ t.getTime() / 3600000, v ]); // X en horas
+    }
+  });
+  if(pts.length < 2) return null;
+  const n = pts.length;
+  let sumX=0, sumY=0, sumXY=0, sumXX=0;
+  pts.forEach(([x,y]) => { sumX+=x; sumY+=y; sumXY+=x*y; sumXX+=x*x; });
+  const denom = (n*sumXX - sumX*sumX);
+  if(denom === 0) return 0;
+  return (n*sumXY - sumX*sumY) / denom; // pendiente = unidades por hora
+}
+
+function formatTendencia(v, unit){
+  if(v === null || v === undefined || Number.isNaN(v)) return "s/d";
+  const abs = Math.abs(v);
+  const dec = abs !== 0 && abs < 0.1 ? 3 : (abs < 1 ? 2 : 1);
+  const signo = v > 0 ? "+" : "";
+  return `${signo}${v.toFixed(dec)} ${unit}/h`;
+}
+
+function statPeriodLabel(){
+  if(mode === "actual"){
+    return `últimas ${HOURS_WINDOW} hs`;
+  }
+  if(rangeStart && rangeEnd){
+    return `del ${rangeStart} al ${rangeEnd}`;
+  }
+  return "rango sin definir";
+}
+
+function makeStatChart(ctx, color){
+  return new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [
+        { data: [], borderColor: color, backgroundColor: color + "33", fill: true, tension: 0.25, pointRadius: 0, borderWidth: 2 },
+        { data: [], borderColor: "#fde047", borderWidth: 1.5, pointRadius: 0, fill: false, borderDash:[4,3] }
+      ]
+    },
+    options: {
+      responsive: true, animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: "#8b95a7", maxTicksLimit: 6, font:{size:9} }, grid:{color:"#232b3d"} },
+        y: { ticks: { color: "#8b95a7", font:{size:9} }, grid:{color:"#232b3d"} }
+      }
+    }
+  });
+}
+
+function renderStats(meta, windowedRows){
+  statsGridEl.innerHTML = "";
+  statCharts = {};
+
+  const active = meta.filter(f => checkedKeys.has(f.key) && !f.text);
+
+  if(!active.length){
+    statsGridEl.innerHTML = `<span id="statsEmpty">No hay variables numéricas seleccionadas para mostrar estadísticas.</span>`;
+    return;
+  }
+  if(!windowedRows.length){
+    statsGridEl.innerHTML = `<span id="statsEmpty">No hay datos en el período seleccionado.</span>`;
+    return;
+  }
+
+  const periodLabel = statPeriodLabel();
+
+  active.forEach(f => {
+    const values = windowedRows.map(r => r[f.key]);
+    const stats = computeStats(values);
+
+    const card = document.createElement("div");
+    card.className = "stat-card";
+    const canvasId = "statchart_" + cssId(f.key);
+
+    if(!stats){
+      card.innerHTML = `
+        <div class="stat-left">
+          <div class="stat-title">${f.icon} ${f.label} - ${periodLabel}</div>
+          <div class="stat-row">Sin datos numéricos en el período.</div>
+        </div>`;
+      statsGridEl.appendChild(card);
+      return;
+    }
+
+    // Tendencia = pendiente de la recta de regresión, en unidades/hora,
+    // calculada sobre el tiempo real de cada punto (no sobre el índice).
+    const tendenciaVal = computeTrendPerHour(windowedRows, f.key);
+    const tendenciaTxt = formatTendencia(tendenciaVal, f.unit);
+    let trendClass = "trend-flat";
+    if(typeof tendenciaVal === "number" && !Number.isNaN(tendenciaVal)){
+      if(tendenciaVal > 0) trendClass = "trend-up";
+      else if(tendenciaVal < 0) trendClass = "trend-down";
+    }
+    const trendArrow = trendClass === "trend-up" ? "↑" : (trendClass === "trend-down" ? "↓" : "→");
+
+    card.innerHTML = `
+      <div class="stat-left">
+        <div class="stat-title">${f.icon} ${f.label} - ${periodLabel}</div>
+        <div class="stat-row"><span class="stat-name">Promedio</span> = ${stats.avg.toFixed(f.dec)}${f.unit}</div>
+        <div class="stat-row"><span class="stat-name">Máxima</span> = ${stats.max.toFixed(f.dec)}${f.unit}</div>
+        <div class="stat-row"><span class="stat-name">Mínima</span> = ${stats.min.toFixed(f.dec)}${f.unit}</div>
+        <div class="stat-row"><span class="stat-name">Variación</span> = ${stats.variacion.toFixed(f.dec)}${f.unit}</div>
+        <div class="stat-row ${trendClass}"><span class="stat-name">Tendencia</span> = <span class="trend-val">${trendArrow} ${tendenciaTxt}</span></div>
+      </div>
+      <div class="stat-right">
+        <canvas id="${canvasId}"></canvas>
+      </div>`;
+    statsGridEl.appendChild(card);
+
+    const chart = makeStatChart(document.getElementById(canvasId), f.color);
+    chart.data.labels = windowedRows.map(r => formatAxisLabel(r["Fecha/Hora"]));
+    chart.data.datasets[0].data = values;
+    chart.data.datasets[1].data = linearRegression(values);
+    chart.update();
+    statCharts[f.key] = chart;
+  });
+}
+
+/* ---------------- control de pestañas Monitoreo / Estadísticas ---------------- */
+function renderCurrentView(){
+  if(currentView === "monitor"){
+    renderCardsAndCharts(currentFieldMeta, lastWindowedRows, lastLatestRow);
+  } else {
+    renderStats(currentFieldMeta, lastWindowedRows);
+  }
+}
+
+function setView(view){
+  currentView = view;
+  document.getElementById("btnViewMonitor").classList.toggle("active", view === "monitor");
+  document.getElementById("btnViewStats").classList.toggle("active", view === "stats");
+  monitorViewEl.style.display = view === "monitor" ? "" : "none";
+  statsViewEl.style.display = view === "stats" ? "" : "none";
+  renderCurrentView();
+}
+
+document.getElementById("btnViewMonitor").addEventListener("click", () => setView("monitor"));
+document.getElementById("btnViewStats").addEventListener("click", () => setView("stats"));
+
+/* ---------------- filtrado por ventana de tiempo ---------------- */
+function windowActual(rows){
+  const cutoff = Date.now() - HOURS_WINDOW * 3600 * 1000;
+  const filtered = rows.filter(r => r["Fecha/Hora"] && r["Fecha/Hora"].getTime() >= cutoff);
+  return filtered.length ? filtered : rows.slice(-500);
+}
+function windowHistorico(rows, start, end){
+  if(!start || !end) return rows;
+  const s = new Date(start + "T00:00:00").getTime();
+  const e = new Date(end + "T23:59:59").getTime();
+  return rows.filter(r => r["Fecha/Hora"] && r["Fecha/Hora"].getTime() >= s && r["Fecha/Hora"].getTime() <= e);
+}
+
+/* ---------------- ciclo principal de actualización ---------------- */
+async function refresh(rebuildMeta){
+  if(!currentBarrio) return;
+  try{
+    const { cols, rows } = await fetchSheet(currentBarrio.sheetId, currentBarrio.sheetName);
+    if(!rows.length) throw new Error("Sin datos");
+
+    if(rebuildMeta){
+      currentFieldMeta = buildFieldMeta(cols, rows[rows.length - 1]);
+      renderVarsList(currentFieldMeta);
+    }
+
+    const latest = rows[rows.length - 1];
+    let windowed;
+    if(mode === "actual"){
+      windowed = windowActual(rows);
+    } else {
+      windowed = windowHistorico(rows, rangeStart, rangeEnd);
+    }
+    lastWindowedRows = windowed;
+    lastLatestRow = latest;
+    renderCurrentView();
+
+    const ts = latest["Fecha/Hora"] ? latest["Fecha/Hora"].toLocaleTimeString("es-AR",{hour12:false}) : "?";
+    statusEl.className = "";
+    statusEl.textContent = `✔ ${rows.length} registros totales · ${windowed.length} en la ventana mostrada · última lectura: ${ts} · actualizado ${new Date().toLocaleTimeString("es-AR",{hour12:false})}`;
+  } catch(err){
+    statusEl.className = "err";
+    statusEl.textContent = "⚠ Error al leer el Sheet: " + err.message + " (verificá que esté compartido como 'cualquiera con el enlace puede ver')";
+    console.error(err);
+  }
+}
+
+/* ---------------- mini-calendarios (inicio / fin) ---------------- */
+const DOW_LABELS = ["Lu","Ma","Mi","Ju","Vi","Sá","Do"];
+function toISO(d){
+  return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+}
+function sameDay(a,b){ return a && b && a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
+
+function createCalendar(containerEl, onPick){
+  const state = { view: new Date(), selected: null };
+  const today = new Date();
+
+  function render(){
+    const y = state.view.getFullYear(), m = state.view.getMonth();
+    const monthNames = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+    const firstOfMonth = new Date(y, m, 1);
+    // Lunes = 0 ... Domingo = 6
+    const startOffset = (firstOfMonth.getDay() + 6) % 7;
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const daysInPrevMonth = new Date(y, m, 0).getDate();
+
+    let cellsHtml = "";
+    for(let i = 0; i < startOffset; i++){
+      const d = daysInPrevMonth - startOffset + 1 + i;
+      cellsHtml += `<div class="cal-day muted">${d}</div>`;
+    }
+    for(let d = 1; d <= daysInMonth; d++){
+      const cellDate = new Date(y, m, d);
+      const classes = ["cal-day"];
+      if(sameDay(cellDate, state.selected)) classes.push("selected");
+      if(sameDay(cellDate, today)) classes.push("today");
+      cellsHtml += `<div class="${classes.join(" ")}" data-d="${d}">${d}</div>`;
+    }
+    const totalCells = startOffset + daysInMonth;
+    const trailing = (7 - (totalCells % 7)) % 7;
+    for(let d = 1; d <= trailing; d++){
+      cellsHtml += `<div class="cal-day muted">${d}</div>`;
+    }
+
+    containerEl.innerHTML = `
+      <div class="cal-head">
+        <button class="cal-nav" data-nav="-1">‹</button>
+        <span class="cal-title">${monthNames[m]} ${y}</span>
+        <button class="cal-nav" data-nav="1">›</button>
+      </div>
+      <div class="cal-grid">
+        ${DOW_LABELS.map(l => `<div class="cal-dow">${l}</div>`).join("")}
+        ${cellsHtml}
+      </div>`;
+
+    containerEl.querySelectorAll(".cal-nav").forEach(btn => {
+      btn.addEventListener("click", () => {
+        state.view = new Date(y, m + parseInt(btn.dataset.nav, 10), 1);
+        render();
+      });
+    });
+    containerEl.querySelectorAll(".cal-day[data-d]:not(.muted)").forEach(cell => {
+      cell.addEventListener("click", () => {
+        state.selected = new Date(y, m, parseInt(cell.dataset.d, 10));
+        render();
+        onPick(state.selected);
+      });
+    });
+  }
+
+  render();
+  return state;
+}
+
+const calStartEl = document.getElementById("calStart");
+const calEndEl = document.getElementById("calEnd");
+let calStartState, calEndState;
+calStartState = createCalendar(calStartEl, (d) => { rangeStart = toISO(d); });
+calEndState   = createCalendar(calEndEl,   (d) => { rangeEnd = toISO(d); });
+
+/* ---------------- controles de modo (Actual / Histórico) ---------------- */
+const btnActual = document.getElementById("btnActual");
+const btnHistorico = document.getElementById("btnHistorico");
+const dateBlock = document.getElementById("dateBlock");
+const modeTitle = document.getElementById("modeTitle");
+const subtitleText = document.getElementById("subtitleText");
+
+let mode = "actual";
+
+function setMode(newMode){
+  mode = newMode;
+  btnActual.classList.toggle("active", mode === "actual");
+  btnHistorico.classList.toggle("active", mode === "historico");
+  dateBlock.style.display = mode === "historico" ? "block" : "none";
+
+  if(mode === "actual"){
+    modeTitle.textContent = "Tiempo Real";
+    subtitleText.textContent = `Últimas ${HOURS_WINDOW} horas · actualización automática cada 60s`;
+    if(!autoRefreshTimer) autoRefreshTimer = setInterval(() => refresh(false), REFRESH_MS);
+    refresh(false);
+  } else {
+    modeTitle.textContent = "Histórico";
+    subtitleText.textContent = rangeStart && rangeEnd ? `Del ${rangeStart} al ${rangeEnd}` : "Elegí un rango de fechas y presioná «Aplicar rango»";
+    if(autoRefreshTimer){ clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+    if(rangeStart && rangeEnd) refresh(false);
+  }
+}
+
+btnActual.addEventListener("click", () => setMode("actual"));
+btnHistorico.addEventListener("click", () => setMode("historico"));
+
+document.getElementById("applyRange").addEventListener("click", () => {
+  if(!rangeStart || !rangeEnd){ alert("Elegí un día de inicio y un día de fin en los calendarios."); return; }
+  if(rangeStart > rangeEnd){ alert("La fecha de inicio es posterior a la de fin."); return; }
+  subtitleText.textContent = `Del ${rangeStart} al ${rangeEnd}`;
+  refresh(false);
+});
+
+barrioSelectEl.addEventListener("change", (e) => selectBarrio(e.target.value));
+
+/* ---------------- arranque ---------------- */
+loadBarrios().then(() => setMode("actual"));
+</script>
+</body>
+</html>
