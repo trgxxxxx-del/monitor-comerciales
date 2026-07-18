@@ -279,20 +279,17 @@
 <script>
 /* =========================================================================
    FUENTES DE DATOS
-   El dashboard ahora recibe datos EXCLUSIVAMENTE de estas dos estaciones
-   Wunderground (cada una con su propia planilla de Google Sheets, pestaña
-   "Datos", según los scripts .gs de Apps Script):
-
-     - ISANMI97  (spreadsheet propio)
-     - ISANMI169 (spreadsheet propio)
-
    Para agregar/quitar una estación: editá el array BARRIOS de abajo. Cada
    entrada necesita su sheetId (el ID largo entre /d/ y /edit en la URL de
    Google Sheets) y el nombre de su pestaña de datos.
    ========================================================================= */
 const BARRIOS = [
-  { key: "ISANMI97",  nombre: "ISANMI97",  sheetId: "1XJjzwDmjYSmgQpI1knXH1div7GK_Ycue2k58moSBxXw", sheetName: "Datos" },
+  { key: "ISANMI87",  nombre: "ISANMI87",  sheetId: "1XJjzwDmjYSmgQpI1knXH1div7GK_Ycue2k58moSBxXw", sheetName: "Datos" },
   { key: "ISANMI169", nombre: "ISANMI169", sheetId: "1ICpVBBmb0Z9JvxKHohDJJ_RYMExLR6JSFhTTJovB95g", sheetName: "Datos" },
+  { key: "IYERBA5",  nombre: "IYERBA5",  sheetId: "1E4EmJMYrnoipccSuu3ZsOBctA6cc1j7tI62uFHMT290", sheetName: "Datos" },
+  { key: "IYERBA8", nombre: "IYERBA8", sheetId: "1KZdbubtxfmO3_t3ciFKA9V4woJwHAq_GN3uD2UHQ6tc", sheetName: "Datos" },
+  { key: "EWS9J",  nombre: "EWS9J",  sheetId: "1vtbr089fvAlKG2TIIXZ4h-gAWbRKrxnqoyKL5AgiaKA", sheetName: "Datos" },
+  { key: "AEROPUERTO", nombre: "AEROPUERTO", sheetId: "19oVjvTdF8yaO6MSjqeC0CJoZtzKWFXALovWfFYXOroY", sheetName: "METAR_SANT" },
 ];
 
 const REFRESH_MS   = 60000;
