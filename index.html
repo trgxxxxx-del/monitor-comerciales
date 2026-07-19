@@ -640,7 +640,16 @@ function makeChart(ctx, color){
      - 3+ capas: se repite lo anterior para cada par consecutivo, dando
        N-1 bandas apiladas.
    El eje Y es dinámico: su máximo se fija para que la altura de la capa
-   más alta quede al 75% de la altura total del gráfico. */
+   más alta quede al 75% de la altura total del gráfico.
+
+   NOTA (tamaño de texto): los tamaños de fuente de este SVG (etiquetas de
+   ejes y ticks) se subieron respecto a la versión original para que, una
+   vez que el SVG se escala dentro de la caja del chart-box, el texto se
+   vea del mismo tamaño visual que el de los demás gráficos (que usan
+   Chart.js con font-size 10 renderizado a resolución nativa del canvas).
+   Como el SVG usa viewBox y se estira/achica según el contenedor, su
+   font-size en unidades del viewBox necesita ser mayor para compensar
+   esa reducción de escala. */
 function formatAlturaTick(v){
   if(v >= 100) return Math.round(v).toLocaleString("es-AR");
   return v.toFixed(1).replace(".", ",");
@@ -648,7 +657,7 @@ function formatAlturaTick(v){
 
 function buildNubosidadSVG(parsed){
   const W = 560, H = 300;
-  const mL = 74, mR = 16, mT = 14, mB = 38;
+  const mL = 82, mR = 16, mT = 14, mB = 44;
   const plotW = W - mL - mR;
   const plotH = H - mT - mB;
 
@@ -669,14 +678,14 @@ function buildNubosidadSVG(parsed){
     const hv = axisMax * i / 5;
     const y = sy(hv);
     gridY += `<line x1="${mL}" y1="${y}" x2="${W - mR}" y2="${y}" stroke="#232b3d" stroke-width="1"/>`;
-    gridY += `<text x="${mL - 10}" y="${y + 4}" text-anchor="end" font-size="11" fill="#8b95a7" font-family="Consolas,Menlo,Monaco,monospace">${formatAlturaTick(hv)}</text>`;
+    gridY += `<text x="${mL - 10}" y="${y + 5}" text-anchor="end" font-size="14" fill="#8b95a7" font-family="Consolas,Menlo,Monaco,monospace">${formatAlturaTick(hv)}</text>`;
   }
 
   let gridX = "";
   for(let p = 0; p <= 100; p += 10){
     const x = sx(p);
     gridX += `<line x1="${x}" y1="${mT}" x2="${x}" y2="${H - mB}" stroke="#232b3d" stroke-width="1"/>`;
-    gridX += `<text x="${x}" y="${H - mB + 16}" text-anchor="middle" font-size="11" fill="#8b95a7" font-family="Consolas,Menlo,Monaco,monospace">${p}</text>`;
+    gridX += `<text x="${x}" y="${H - mB + 20}" text-anchor="middle" font-size="14" fill="#8b95a7" font-family="Consolas,Menlo,Monaco,monospace">${p}</text>`;
   }
 
   let shapes = "";
@@ -696,8 +705,8 @@ function buildNubosidadSVG(parsed){
     ${shapes}
     <line x1="${mL}" y1="${mT}" x2="${mL}" y2="${H - mB}" stroke="#3d465c" stroke-width="1"/>
     <line x1="${mL}" y1="${H - mB}" x2="${W - mR}" y2="${H - mB}" stroke="#3d465c" stroke-width="1"/>
-    <text x="${mL + plotW / 2}" y="${H - 6}" text-anchor="middle" font-size="11" fill="#8b95a7" font-family="Consolas,Menlo,Monaco,monospace">nubosidad (%)</text>
-    <text x="14" y="${mT + plotH / 2}" text-anchor="middle" font-size="11" fill="#8b95a7" font-family="Consolas,Menlo,Monaco,monospace" transform="rotate(-90 14 ${mT + plotH / 2})">Altura (m)</text>
+    <text x="${mL + plotW / 2}" y="${H - 6}" text-anchor="middle" font-size="13" fill="#8b95a7" font-family="Consolas,Menlo,Monaco,monospace">nubosidad (%)</text>
+    <text x="16" y="${mT + plotH / 2}" text-anchor="middle" font-size="13" fill="#8b95a7" font-family="Consolas,Menlo,Monaco,monospace" transform="rotate(-90 16 ${mT + plotH / 2})">Altura (m)</text>
   </svg>`;
 }
 
