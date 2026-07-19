@@ -631,76 +631,79 @@ function makeChart(ctx, color){
 }
 
 /* ---------------- gráfico especial "Detalle nubosidad" ----------------
-   Área bajo la curva altura(nubosidad%), con el primer tramo plano (desde
-   0% hasta el % de la primera capa, a su altura) y los tramos siguientes
-   interpolados linealmente entre capas consecutivas. El eje Y es dinámico:
-   su máximo se fija para que la altura de la capa más alta quede al 75%
-   de la altura total del gráfico. */
-function makeNubosidadChart(ctx){
-  return new Chart(ctx, {
-    type: "line",
-    data: {
-      datasets: [{
-        data: [],
-        borderColor: "#e5e7eb",
-        backgroundColor: "rgba(203,213,225,0.55)",
-        fill: "origin",
-        borderWidth: 2,
-        pointRadius: 0,
-        tension: 0,
-        stepped: false
-      }]
-    },
-    options: {
-      responsive: true, animation: false,
-      parsing: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: {
-          type: "linear", min: 0, max: 100,
-          title: { display:true, text:"nubosidad (%)", color:"#8b95a7", font:{size:10} },
-          ticks: { color:"#8b95a7", font:{size:10}, stepSize:10 },
-          grid: { color:"#232b3d" }
-        },
-        y: {
-          type: "linear", min: 0, max: 1000,
-          title: { display:true, text:"Altura (m)", color:"#8b95a7", font:{size:10} },
-          ticks: { color:"#8b95a7", font:{size:10} },
-          grid: { color:"#232b3d" }
-        }
-      }
-    }
-  });
+   Se dibuja como SVG propio (no con Chart.js) porque los porcentajes de
+   capas consecutivas NO son necesariamente crecientes con la altura (por
+   ej. "75% a 2100 ft | 50% a 2700 ft" — la capa de arriba cubre MENOS
+   cielo que la de abajo). El relleno automático de Chart.js asume que el
+   eje X siempre crece y con datos así arma un relleno auto-intersectado
+   (se ve como un triángulo roto). Acá en cambio cada tramo se rellena
+   como su propio polígono independiente, válido sea cual sea la dirección
+   del cambio de %:
+     - Primera capa: un rectángulo de 0 a su % de ancho, de 0 a su altura.
+     - Cada capa siguiente: un trapecio bajo la línea que la conecta con
+       la capa anterior (línea que puede subir o bajar en %).
+   El eje Y es dinámico: su máximo se fija para que la altura de la capa
+   más alta quede al 75% de la altura total del gráfico. */
+function formatAlturaTick(v){
+  if(v >= 100) return Math.round(v).toLocaleString("es-AR");
+  return v.toFixed(1).replace(".", ",");
 }
 
-function updateNubosidadChart(chart, msgEl, parsed){
+function buildNubosidadSVG(parsed){
+  const W = 560, H = 300;
+  const mL = 74, mR = 16, mT = 14, mB = 38;
+  const plotW = W - mL - mR;
+  const plotH = H - mT - mB;
+
   if(!parsed || parsed.cavok || !parsed.layers.length){
-    chart.data.datasets[0].data = [];
-    chart.options.scales.y.max = 1000;
-    chart.update();
-    if(msgEl){
-      msgEl.style.display = "block";
-      msgEl.textContent = (parsed && parsed.cavok) ? "☀️ CAVOK — cielo despejado" : "Sin datos de nubosidad";
-    }
-    if(chart.canvas) chart.canvas.style.display = "none";
-    return;
+    const msg = (parsed && parsed.cavok) ? "☀️ CAVOK — cielo despejado" : "Sin datos de nubosidad";
+    return `<div style="color:#8b95a7;font-size:0.85rem;padding:40px 0;text-align:center;">${msg}</div>`;
   }
-  if(msgEl) msgEl.style.display = "none";
-  if(chart.canvas) chart.canvas.style.display = "";
 
   const layers = parsed.layers;
-  const points = [];
-  points.push({ x: 0, y: layers[0].m });
-  points.push({ x: layers[0].pct, y: layers[0].m });
-  for(let i = 1; i < layers.length; i++){
-    points.push({ x: layers[i].pct, y: layers[i].m });
-  }
   const maxH = layers[layers.length - 1].m;
   const axisMax = maxH > 0 ? maxH / 0.75 : 1000;
 
-  chart.data.datasets[0].data = points;
-  chart.options.scales.y.max = axisMax;
-  chart.update();
+  const sx = pct => mL + (pct / 100) * plotW;
+  const sy = h   => mT + plotH - (h / axisMax) * plotH;
+
+  let gridY = "";
+  for(let i = 0; i <= 5; i++){
+    const hv = axisMax * i / 5;
+    const y = sy(hv);
+    gridY += `<line x1="${mL}" y1="${y}" x2="${W - mR}" y2="${y}" stroke="#232b3d" stroke-width="1"/>`;
+    gridY += `<text x="${mL - 10}" y="${y + 4}" text-anchor="end" font-size="11" fill="#8b95a7" font-family="Consolas,Menlo,Monaco,monospace">${formatAlturaTick(hv)}</text>`;
+  }
+
+  let gridX = "";
+  for(let p = 0; p <= 100; p += 10){
+    const x = sx(p);
+    gridX += `<line x1="${x}" y1="${mT}" x2="${x}" y2="${H - mB}" stroke="#232b3d" stroke-width="1"/>`;
+    gridX += `<text x="${x}" y="${H - mB + 16}" text-anchor="middle" font-size="11" fill="#8b95a7" font-family="Consolas,Menlo,Monaco,monospace">${p}</text>`;
+  }
+
+  let fills = "";
+  const first = layers[0];
+  fills += `<polygon points="${sx(0)},${sy(0)} ${sx(first.pct)},${sy(0)} ${sx(first.pct)},${sy(first.m)} ${sx(0)},${sy(first.m)}" fill="#cbd5e1" fill-opacity="0.55"/>`;
+  for(let i = 1; i < layers.length; i++){
+    const a = layers[i - 1], b = layers[i];
+    fills += `<polygon points="${sx(a.pct)},${sy(0)} ${sx(a.pct)},${sy(a.m)} ${sx(b.pct)},${sy(b.m)} ${sx(b.pct)},${sy(0)}" fill="#cbd5e1" fill-opacity="0.55"/>`;
+  }
+
+  let boundaryPts = `${sx(0)},${sy(first.m)} ${sx(first.pct)},${sy(first.m)} `;
+  for(let i = 1; i < layers.length; i++){
+    boundaryPts += `${sx(layers[i].pct)},${sy(layers[i].m)} `;
+  }
+
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;max-height:260px;">
+    ${gridY}${gridX}
+    ${fills}
+    <polyline points="${boundaryPts}" fill="none" stroke="#e5e7eb" stroke-width="2"/>
+    <line x1="${mL}" y1="${mT}" x2="${mL}" y2="${H - mB}" stroke="#3d465c" stroke-width="1"/>
+    <line x1="${mL}" y1="${H - mB}" x2="${W - mR}" y2="${H - mB}" stroke="#3d465c" stroke-width="1"/>
+    <text x="${mL + plotW / 2}" y="${H - 6}" text-anchor="middle" font-size="11" fill="#8b95a7" font-family="Consolas,Menlo,Monaco,monospace">nubosidad (%)</text>
+    <text x="14" y="${mT + plotH / 2}" text-anchor="middle" font-size="11" fill="#8b95a7" font-family="Consolas,Menlo,Monaco,monospace" transform="rotate(-90 14 ${mT + plotH / 2})">Altura (m)</text>
+  </svg>`;
 }
 
 function renderCardsAndCharts(meta, windowedRows, latestRow){
@@ -736,14 +739,10 @@ function renderCardsAndCharts(meta, windowedRows, latestRow){
   active.filter(f => f.nubosidad).forEach(f => {
     const box = document.createElement("div");
     box.className = "chart-box";
-    const canvasId = "chart_" + cssId(f.key);
-    const msgId = "msg_" + cssId(f.key);
-    box.innerHTML = `<h3>${f.icon} Detalle nubosidad</h3>
-      <div id="${msgId}" style="display:none;color:#8b95a7;font-size:0.85rem;padding:40px 0;text-align:center;"></div>
-      <canvas id="${canvasId}"></canvas>`;
+    const val = latestRow ? latestRow[f.key] : null;
+    const parsed = parseNubosidadDetalle(val);
+    box.innerHTML = `<h3>${f.icon} Detalle nubosidad</h3><div>${buildNubosidadSVG(parsed)}</div>`;
     chartsEl.appendChild(box);
-    charts[f.key] = makeNubosidadChart(document.getElementById(canvasId));
-    charts[f.key]._msgEl = document.getElementById(msgId);
   });
 
   if(latestRow){
@@ -772,14 +771,6 @@ function renderCardsAndCharts(meta, windowedRows, latestRow){
     chart.data.labels = windowedRows.map(r => formatAxisLabel(r["Fecha/Hora"]));
     chart.data.datasets[0].data = windowedRows.map(r => r[f.key]);
     chart.update();
-  });
-
-  active.filter(f => f.nubosidad).forEach(f => {
-    const chart = charts[f.key];
-    if(!chart) return;
-    const val = latestRow ? latestRow[f.key] : null;
-    const parsed = parseNubosidadDetalle(val);
-    updateNubosidadChart(chart, chart._msgEl, parsed);
   });
 }
 
