@@ -346,7 +346,7 @@ const OVERRIDES = {
   "Precip. hora (mm)":            { label:"Precip. hora",        icon:"🌧️", color:"#38bdf8" },
   "Precip. acum. día (mm)":       { label:"Precip. acum. día",   icon:"🌧️", color:"#38bdf8" },
   "Radiación Solar (W/m²)":       { label:"Radiación Solar",     icon:"☀️", color:"#fbbf24" },
-  "UV":                           { label:"UV",                  icon:"☀️", color:"#8b5cf6" },
+  "UV":                           { label:"Índice UV",           icon:"☀️", color:"#ffe600", uvindex:true },
 };
 
 /* Normaliza un encabezado para poder compararlo sin importar mayúsculas,
@@ -545,6 +545,16 @@ function buildFieldMeta(cols, sampleRow){
       return;
     }
 
+    // Columna de Índice UV: se marca aparte para que su tarjeta muestre el
+    // número grande + la categoría de riesgo (Bajo/Moderado/Alto/Muy
+    // Alto/Extremo), ambos coloreados según la escala oficial. El gráfico
+    // histórico de esta variable sigue siendo el gráfico de línea normal
+    // (no se toca), igual que se hizo con la brújula de viento.
+    if(ov && ov.uvindex){
+      meta.push({ key, label: ov.label, icon: ov.icon, unit:"", dec:0, color: ov.color || "#facc15", uvindex:true });
+      return;
+    }
+
     // Columna de "Detalle Nubosidad" (capas tipo METAR, texto libre con
     // patrón "X% a Y ft" o "CAVOK"): se detecta por contenido, no por
     // nombre exacto de encabezado, y se maneja con su propio gráfico.
@@ -722,8 +732,11 @@ function buildNubosidadSVG(parsed){
   </svg>`;
 }
 
-/* ---------------- gráfico especial "Dirección del viento" ----------------
-   Brújula N/E/S/O con una flecha que apunta en la dirección reportada.
+/* ---------------- widget "Dirección del viento" (brújula) ----------------
+   Va SOLO dentro del cartel de "valor actual" (la tarjeta chica), no
+   reemplaza el gráfico histórico: la serie de tiempo de grados sigue
+   graficándose como cualquier otra variable numérica en la sección de
+   gráficos.
 
    CONVENCIÓN DE ÁNGULO: el dato es el estándar meteorológico — grados
    medidos en sentido horario desde el Norte (0°=N, 90°=E, 180°=S, 270°=O).
@@ -738,21 +751,21 @@ function buildNubosidadSVG(parsed){
    centro, tal como pidió el usuario ("si no se reporta la dirección
    desaparece la flecha"). */
 function buildWindDirSVG(deg){
-  const W = 300, H = 300;
-  const cx = 150, cy = 150, r = 100;
+  const W = 180, H = 180;
+  const cx = 90, cy = 90, r = 58;
   const hasData = typeof deg === "number" && !Number.isNaN(deg);
 
   let arrow = "";
   if(hasData){
     const theta = (deg * Math.PI) / 180;
-    const tipX  = cx + r * 0.72 * Math.sin(theta);
-    const tipY  = cy - r * 0.72 * Math.cos(theta);
-    const tailX = cx - r * 0.06 * Math.sin(theta);
-    const tailY = cy + r * 0.06 * Math.cos(theta);
+    const tipX  = cx + r * 0.68 * Math.sin(theta);
+    const tipY  = cy - r * 0.68 * Math.cos(theta);
+    const tailX = cx - r * 0.08 * Math.sin(theta);
+    const tailY = cy + r * 0.08 * Math.cos(theta);
 
     // Cabeza de flecha: dos trazos cortos que "abren" hacia atrás desde la
     // punta, como en el ejemplo de referencia (no es un triángulo relleno).
-    const headLen = 16;
+    const headLen = 11;
     const headAngle = 0.5; // ~29°
     const back1 = theta + Math.PI - headAngle;
     const back2 = theta + Math.PI + headAngle;
@@ -762,27 +775,41 @@ function buildWindDirSVG(deg){
     const h2y = tipY - headLen * Math.cos(back2);
 
     arrow = `
-      <line x1="${tailX.toFixed(1)}" y1="${tailY.toFixed(1)}" x2="${tipX.toFixed(1)}" y2="${tipY.toFixed(1)}" stroke="#e5e7eb" stroke-width="3.5" stroke-linecap="round"/>
-      <line x1="${tipX.toFixed(1)}" y1="${tipY.toFixed(1)}" x2="${h1x.toFixed(1)}" y2="${h1y.toFixed(1)}" stroke="#e5e7eb" stroke-width="3.5" stroke-linecap="round"/>
-      <line x1="${tipX.toFixed(1)}" y1="${tipY.toFixed(1)}" x2="${h2x.toFixed(1)}" y2="${h2y.toFixed(1)}" stroke="#e5e7eb" stroke-width="3.5" stroke-linecap="round"/>
+      <line x1="${tailX.toFixed(1)}" y1="${tailY.toFixed(1)}" x2="${tipX.toFixed(1)}" y2="${tipY.toFixed(1)}" stroke="#e5e7eb" stroke-width="3" stroke-linecap="round"/>
+      <line x1="${tipX.toFixed(1)}" y1="${tipY.toFixed(1)}" x2="${h1x.toFixed(1)}" y2="${h1y.toFixed(1)}" stroke="#e5e7eb" stroke-width="3" stroke-linecap="round"/>
+      <line x1="${tipX.toFixed(1)}" y1="${tipY.toFixed(1)}" x2="${h2x.toFixed(1)}" y2="${h2y.toFixed(1)}" stroke="#e5e7eb" stroke-width="3" stroke-linecap="round"/>
     `;
   }
 
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;max-height:260px;">
-    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e5e7eb" stroke-width="2.5"/>
-    <text x="${cx}" y="${cy - r - 16}" text-anchor="middle" font-size="20" font-weight="700" fill="#e6e9ef" font-family="Consolas,Menlo,Monaco,monospace">N</text>
-    <text x="${cx}" y="${cy + r + 30}" text-anchor="middle" font-size="20" font-weight="700" fill="#e6e9ef" font-family="Consolas,Menlo,Monaco,monospace">S</text>
-    <text x="${cx + r + 26}" y="${cy + 7}" text-anchor="middle" font-size="20" font-weight="700" fill="#e6e9ef" font-family="Consolas,Menlo,Monaco,monospace">E</text>
-    <text x="${cx - r - 26}" y="${cy + 7}" text-anchor="middle" font-size="20" font-weight="700" fill="#e6e9ef" font-family="Consolas,Menlo,Monaco,monospace">O</text>
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:150px;height:auto;display:block;margin:0 auto;">
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e5e7eb" stroke-width="2"/>
+    <text x="${cx}" y="${cy - r - 9}" text-anchor="middle" font-size="14" font-weight="700" fill="#e6e9ef" font-family="Consolas,Menlo,Monaco,monospace">N</text>
+    <text x="${cx}" y="${cy + r + 18}" text-anchor="middle" font-size="14" font-weight="700" fill="#e6e9ef" font-family="Consolas,Menlo,Monaco,monospace">S</text>
+    <text x="${cx + r + 15}" y="${cy + 5}" text-anchor="middle" font-size="14" font-weight="700" fill="#e6e9ef" font-family="Consolas,Menlo,Monaco,monospace">E</text>
+    <text x="${cx - r - 15}" y="${cy + 5}" text-anchor="middle" font-size="14" font-weight="700" fill="#e6e9ef" font-family="Consolas,Menlo,Monaco,monospace">O</text>
     ${arrow}
-    ${!hasData ? `<text x="${cx}" y="${cy + 5}" text-anchor="middle" font-size="13" fill="#8b95a7" font-family="Consolas,Menlo,Monaco,monospace">s/d</text>` : ""}
+    ${!hasData ? `<text x="${cx}" y="${cy + 4}" text-anchor="middle" font-size="11" fill="#8b95a7" font-family="Consolas,Menlo,Monaco,monospace">s/d</text>` : ""}
   </svg>`;
 }
 
-function degToCardinal(deg){
-  const dirs = ["N","NE","E","SE","S","SO","O","NO"];
-  const idx = Math.round((((deg % 360) + 360) % 360) / 45) % 8;
-  return dirs[idx];
+/* ---------------- widget "Índice UV" (número + categoría de riesgo) ----------------
+   Escala oficial (OMS): 0-2 Bajo, 3-5 Moderado, 6-7 Alto, 8-10 Muy Alto,
+   11+ Extremo. El número y la etiqueta de categoría se colorean igual,
+   usando el color de fondo de cada franja de la escala (adaptado a texto
+   legible sobre el fondo oscuro del panel). Va SOLO en el cartel de valor
+   actual, igual que la brújula: el gráfico histórico de la variable "UV"
+   sigue siendo el gráfico de línea normal. */
+const UV_SCALE = [
+  { max:2,  label:"Bajo",      color:"#9ccc3c" },
+  { max:5,  label:"Moderado",  color:"#ffe600" },
+  { max:7,  label:"Alto",      color:"#ff9800" },
+  { max:10, label:"Muy Alto",  color:"#f0555a" },
+  { max:Infinity, label:"Extremo", color:"#b39ddb" },
+];
+function uvLevelInfo(v){
+  if(v === null || v === undefined || Number.isNaN(v)) return { label:null, color:"#8b95a7" };
+  const clamped = Math.max(0, v);
+  return UV_SCALE.find(s => clamped <= s.max) || UV_SCALE[UV_SCALE.length - 1];
 }
 
 function renderCardsAndCharts(meta, windowedRows, latestRow){
@@ -797,7 +824,9 @@ function renderCardsAndCharts(meta, windowedRows, latestRow){
     div.className = "card";
     const valId = "v_" + cssId(f.key);
     if(f.winddir){
-      div.innerHTML = `<div class="label">${f.icon} ${f.label}</div><div class="value" id="${valId}" style="font-size:1.1rem;">--</div>`;
+      div.innerHTML = `<div class="label">${f.icon} ${f.label}</div><div class="value" id="${valId}" style="font-size:1rem;">${buildWindDirSVG(null)}</div>`;
+    } else if(f.uvindex){
+      div.innerHTML = `<div class="label">${f.icon} ${f.label}</div><div class="value" id="${valId}" style="text-align:center;font-size:1rem;">--</div>`;
     } else if(f.nubosidad){
       div.innerHTML = `<div class="label">${f.icon} ${f.label}</div><div class="value" id="${valId}" style="font-size:0.95rem;">--</div>`;
     } else if(f.text){
@@ -808,7 +837,7 @@ function renderCardsAndCharts(meta, windowedRows, latestRow){
     cardsEl.appendChild(div);
   });
 
-  active.filter(f => !f.text && !f.nubosidad && !f.winddir).forEach(f => {
+  active.filter(f => !f.text && !f.nubosidad).forEach(f => {
     const box = document.createElement("div");
     box.className = "chart-box";
     const canvasId = "chart_" + cssId(f.key);
@@ -826,24 +855,21 @@ function renderCardsAndCharts(meta, windowedRows, latestRow){
     chartsEl.appendChild(box);
   });
 
-  active.filter(f => f.winddir).forEach(f => {
-    const box = document.createElement("div");
-    box.className = "chart-box";
-    const val = latestRow ? latestRow[f.key] : null;
-    const deg = typeof val === "number" ? val : null;
-    box.innerHTML = `<h3>${f.icon} ${f.label}</h3><div>${buildWindDirSVG(deg)}</div>`;
-    chartsEl.appendChild(box);
-  });
-
   if(latestRow){
     active.forEach(f => {
       const el = document.getElementById("v_" + cssId(f.key));
       if(!el) return;
       const val = latestRow[f.key];
       if(f.winddir){
-        el.textContent = (typeof val === "number" && !Number.isNaN(val))
-          ? `${val.toFixed(0)}° (${degToCardinal(val)})`
-          : "--";
+        const deg = (typeof val === "number" && !Number.isNaN(val)) ? val : null;
+        el.innerHTML = buildWindDirSVG(deg);
+      } else if(f.uvindex){
+        const v = (typeof val === "number" && !Number.isNaN(val)) ? Math.round(val) : null;
+        const info = uvLevelInfo(v);
+        el.innerHTML = (v === null)
+          ? `<span style="color:#8b95a7;">--</span>`
+          : `<div style="font-size:1.9rem;font-weight:800;color:${info.color};line-height:1.1;">${v}</div>` +
+            `<div style="font-size:0.85rem;font-weight:700;color:${info.color};margin-top:2px;">${info.label}</div>`;
       } else if(f.nubosidad){
         const parsed = parseNubosidadDetalle(val);
         if(!parsed) el.textContent = "--";
@@ -859,7 +885,7 @@ function renderCardsAndCharts(meta, windowedRows, latestRow){
     });
   }
 
-  active.filter(f => !f.text && !f.nubosidad && !f.winddir).forEach(f => {
+  active.filter(f => !f.text && !f.nubosidad).forEach(f => {
     const chart = charts[f.key];
     if(!chart) return;
     chart.data.labels = windowedRows.map(r => formatAxisLabel(r["Fecha/Hora"]));
