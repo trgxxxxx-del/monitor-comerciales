@@ -781,7 +781,7 @@ function buildWindDirSVG(deg){
     `;
   }
 
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:150px;height:auto;display:block;margin:0 auto;">
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:100px;height:auto;display:block;margin:0 auto;">
     <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e5e7eb" stroke-width="2"/>
     <text x="${cx}" y="${cy - r - 9}" text-anchor="middle" font-size="14" font-weight="700" fill="#e6e9ef" font-family="Consolas,Menlo,Monaco,monospace">N</text>
     <text x="${cx}" y="${cy + r + 18}" text-anchor="middle" font-size="14" font-weight="700" fill="#e6e9ef" font-family="Consolas,Menlo,Monaco,monospace">S</text>
