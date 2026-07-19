@@ -341,7 +341,7 @@ const OVERRIDES = {
   "Lluvia (mm)":                  { label:"Lluvia",              icon:"🌧️", color:"#38bdf8" },
   "Tasa de Lluvia (mm/h)":        { label:"Tasa de Lluvia",      icon:"🌧️", color:"#38bdf8" },
   "Vel. Viento (km/h)":           { label:"Vel. Viento",         icon:"🍃", color:"#4ea1f7" },
-  "Dir. Viento (°)":              { label:"Dir. Viento",         icon:"🧭", color:"#a3a3a3" },
+  "Dir. Viento (°)":              { label:"Dir. Viento",         icon:"🧭", color:"#a3a3a3", winddir:true },
   "Ráfagas (km/h)":               { label:"Ráfagas",             icon:"💨", color:"#38bdf8" },
   "Precip. hora (mm)":            { label:"Precip. hora",        icon:"🌧️", color:"#38bdf8" },
   "Precip. acum. día (mm)":       { label:"Precip. acum. día",   icon:"🌧️", color:"#38bdf8" },
@@ -528,10 +528,22 @@ function buildFieldMeta(cols, sampleRow){
     if(key === "Fecha/Hora") return;
     const ov = lookupOverride(key);
     const val = sampleRow ? sampleRow[key] : null;
+    const isWindDir = ov && ov.winddir;
 
     // Columna sin datos en el último registro (null/undefined/""): se omite
-    // por completo, no se muestra como tarjeta vacía "--".
-    if(val === null || val === undefined || val === "") return;
+    // por completo, no se muestra como tarjeta vacía "--". EXCEPCIÓN: la
+    // columna de dirección de viento sí se muestra igual (la brújula queda
+    // sin flecha) porque el widget debe permanecer visible aunque el sensor
+    // no haya reportado un dato en la última lectura.
+    if(!isWindDir && (val === null || val === undefined || val === "")) return;
+
+    // Columna de dirección de viento: se maneja con su propio widget de
+    // brújula (N/E/S/O + flecha), no como tarjeta numérica ni gráfico de
+    // línea normal.
+    if(isWindDir){
+      meta.push({ key, label: ov.label, icon: ov.icon, unit:"°", dec:0, color: ov.color || "#e5e7eb", winddir:true });
+      return;
+    }
 
     // Columna de "Detalle Nubosidad" (capas tipo METAR, texto libre con
     // patrón "X% a Y ft" o "CAVOK"): se detecta por contenido, no por
@@ -710,6 +722,69 @@ function buildNubosidadSVG(parsed){
   </svg>`;
 }
 
+/* ---------------- gráfico especial "Dirección del viento" ----------------
+   Brújula N/E/S/O con una flecha que apunta en la dirección reportada.
+
+   CONVENCIÓN DE ÁNGULO: el dato es el estándar meteorológico — grados
+   medidos en sentido horario desde el Norte (0°=N, 90°=E, 180°=S, 270°=O).
+   Se traduce a coordenadas SVG con N arriba (−y) y E a la derecha (+x):
+     x = cx + r*sin(θ)
+     y = cy − r*cos(θ)
+   así 0° cae justo arriba (N), 90° a la derecha (E), 180° abajo (S) y
+   270° a la izquierda (O), respetando el sentido horario real.
+
+   Si no hay dato (null/undefined/"" o no numérico) NO se dibuja flecha:
+   solo queda la rosa de los vientos vacía con la leyenda "s/d" en el
+   centro, tal como pidió el usuario ("si no se reporta la dirección
+   desaparece la flecha"). */
+function buildWindDirSVG(deg){
+  const W = 300, H = 300;
+  const cx = 150, cy = 150, r = 100;
+  const hasData = typeof deg === "number" && !Number.isNaN(deg);
+
+  let arrow = "";
+  if(hasData){
+    const theta = (deg * Math.PI) / 180;
+    const tipX  = cx + r * 0.72 * Math.sin(theta);
+    const tipY  = cy - r * 0.72 * Math.cos(theta);
+    const tailX = cx - r * 0.06 * Math.sin(theta);
+    const tailY = cy + r * 0.06 * Math.cos(theta);
+
+    // Cabeza de flecha: dos trazos cortos que "abren" hacia atrás desde la
+    // punta, como en el ejemplo de referencia (no es un triángulo relleno).
+    const headLen = 16;
+    const headAngle = 0.5; // ~29°
+    const back1 = theta + Math.PI - headAngle;
+    const back2 = theta + Math.PI + headAngle;
+    const h1x = tipX + headLen * Math.sin(back1);
+    const h1y = tipY - headLen * Math.cos(back1);
+    const h2x = tipX + headLen * Math.sin(back2);
+    const h2y = tipY - headLen * Math.cos(back2);
+
+    arrow = `
+      <line x1="${tailX.toFixed(1)}" y1="${tailY.toFixed(1)}" x2="${tipX.toFixed(1)}" y2="${tipY.toFixed(1)}" stroke="#e5e7eb" stroke-width="3.5" stroke-linecap="round"/>
+      <line x1="${tipX.toFixed(1)}" y1="${tipY.toFixed(1)}" x2="${h1x.toFixed(1)}" y2="${h1y.toFixed(1)}" stroke="#e5e7eb" stroke-width="3.5" stroke-linecap="round"/>
+      <line x1="${tipX.toFixed(1)}" y1="${tipY.toFixed(1)}" x2="${h2x.toFixed(1)}" y2="${h2y.toFixed(1)}" stroke="#e5e7eb" stroke-width="3.5" stroke-linecap="round"/>
+    `;
+  }
+
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;max-height:260px;">
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e5e7eb" stroke-width="2.5"/>
+    <text x="${cx}" y="${cy - r - 16}" text-anchor="middle" font-size="20" font-weight="700" fill="#e6e9ef" font-family="Consolas,Menlo,Monaco,monospace">N</text>
+    <text x="${cx}" y="${cy + r + 30}" text-anchor="middle" font-size="20" font-weight="700" fill="#e6e9ef" font-family="Consolas,Menlo,Monaco,monospace">S</text>
+    <text x="${cx + r + 26}" y="${cy + 7}" text-anchor="middle" font-size="20" font-weight="700" fill="#e6e9ef" font-family="Consolas,Menlo,Monaco,monospace">E</text>
+    <text x="${cx - r - 26}" y="${cy + 7}" text-anchor="middle" font-size="20" font-weight="700" fill="#e6e9ef" font-family="Consolas,Menlo,Monaco,monospace">O</text>
+    ${arrow}
+    ${!hasData ? `<text x="${cx}" y="${cy + 5}" text-anchor="middle" font-size="13" fill="#8b95a7" font-family="Consolas,Menlo,Monaco,monospace">s/d</text>` : ""}
+  </svg>`;
+}
+
+function degToCardinal(deg){
+  const dirs = ["N","NE","E","SE","S","SO","O","NO"];
+  const idx = Math.round((((deg % 360) + 360) % 360) / 45) % 8;
+  return dirs[idx];
+}
+
 function renderCardsAndCharts(meta, windowedRows, latestRow){
   cardsEl.innerHTML = "";
   chartsEl.innerHTML = "";
@@ -721,7 +796,9 @@ function renderCardsAndCharts(meta, windowedRows, latestRow){
     const div = document.createElement("div");
     div.className = "card";
     const valId = "v_" + cssId(f.key);
-    if(f.nubosidad){
+    if(f.winddir){
+      div.innerHTML = `<div class="label">${f.icon} ${f.label}</div><div class="value" id="${valId}" style="font-size:1.1rem;">--</div>`;
+    } else if(f.nubosidad){
       div.innerHTML = `<div class="label">${f.icon} ${f.label}</div><div class="value" id="${valId}" style="font-size:0.95rem;">--</div>`;
     } else if(f.text){
       div.innerHTML = `<div class="label">${f.icon} ${f.label}</div><div class="value" id="${valId}" style="font-size:1.1rem;">--</div>`;
@@ -731,7 +808,7 @@ function renderCardsAndCharts(meta, windowedRows, latestRow){
     cardsEl.appendChild(div);
   });
 
-  active.filter(f => !f.text && !f.nubosidad).forEach(f => {
+  active.filter(f => !f.text && !f.nubosidad && !f.winddir).forEach(f => {
     const box = document.createElement("div");
     box.className = "chart-box";
     const canvasId = "chart_" + cssId(f.key);
@@ -749,12 +826,25 @@ function renderCardsAndCharts(meta, windowedRows, latestRow){
     chartsEl.appendChild(box);
   });
 
+  active.filter(f => f.winddir).forEach(f => {
+    const box = document.createElement("div");
+    box.className = "chart-box";
+    const val = latestRow ? latestRow[f.key] : null;
+    const deg = typeof val === "number" ? val : null;
+    box.innerHTML = `<h3>${f.icon} ${f.label}</h3><div>${buildWindDirSVG(deg)}</div>`;
+    chartsEl.appendChild(box);
+  });
+
   if(latestRow){
     active.forEach(f => {
       const el = document.getElementById("v_" + cssId(f.key));
       if(!el) return;
       const val = latestRow[f.key];
-      if(f.nubosidad){
+      if(f.winddir){
+        el.textContent = (typeof val === "number" && !Number.isNaN(val))
+          ? `${val.toFixed(0)}° (${degToCardinal(val)})`
+          : "--";
+      } else if(f.nubosidad){
         const parsed = parseNubosidadDetalle(val);
         if(!parsed) el.textContent = "--";
         else if(parsed.cavok) el.textContent = "CAVOK";
@@ -769,7 +859,7 @@ function renderCardsAndCharts(meta, windowedRows, latestRow){
     });
   }
 
-  active.filter(f => !f.text && !f.nubosidad).forEach(f => {
+  active.filter(f => !f.text && !f.nubosidad && !f.winddir).forEach(f => {
     const chart = charts[f.key];
     if(!chart) return;
     chart.data.labels = windowedRows.map(r => formatAxisLabel(r["Fecha/Hora"]));
@@ -870,7 +960,7 @@ function renderStats(meta, windowedRows){
   statsGridEl.innerHTML = "";
   statCharts = {};
 
-  const active = meta.filter(f => checkedKeys.has(f.key) && !f.text && !f.nubosidad);
+  const active = meta.filter(f => checkedKeys.has(f.key) && !f.text && !f.nubosidad && !f.winddir);
 
   if(!active.length){
     statsGridEl.innerHTML = `<span id="statsEmpty">No hay variables numéricas seleccionadas para mostrar estadísticas.</span>`;
